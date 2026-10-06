@@ -1,0 +1,30 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Java
+*.class
+
+# Build
+target/
+build/
+out/
+
+# Gradle
+.gradle/
+
+# Maven
+.mvn/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+.env.*
+application-local.yml
+application-local.yaml
+application-local.properties
