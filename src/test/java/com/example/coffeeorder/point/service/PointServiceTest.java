@@ -33,7 +33,7 @@ class PointServiceTest {
         // given
         PointAccount account = new PointAccount("user-1001");
 
-        given(pointAccountRepository.findByUserId("user-1001"))
+        given(pointAccountRepository.findByUserIdForUpdate("user-1001"))
                 .willReturn(Optional.of(account));
 
         // when

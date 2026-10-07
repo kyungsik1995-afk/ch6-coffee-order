@@ -23,8 +23,10 @@ public class PointService {
 
     @Transactional
     public PointAccount charge(String userId, Long amount) {
-        PointAccount account = pointAccountRepository.findByUserId(userId)
-                .orElseGet(() -> createAccount(userId));
+        pointAccountRepository.createIfNotExists(userId);
+
+        PointAccount account = pointAccountRepository.findByUserIdForUpdate(userId)
+                .orElseThrow();
 
         account.charge(amount);
 
@@ -37,9 +39,5 @@ public class PointService {
         pointHistoryRepository.save(history);
 
         return account;
-    }
-
-    private PointAccount createAccount(String userId) {
-        return pointAccountRepository.save(new PointAccount(userId));
     }
 }

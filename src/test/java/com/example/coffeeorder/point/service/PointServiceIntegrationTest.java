@@ -47,7 +47,7 @@ class PointServiceIntegrationTest {
                 .isEqualTo(5000L);
 
         PointHistory savedHistory =
-                pointHistoryRepository.findAll()
+                pointHistoryRepository.findAllByAccount_UserId("user-1001")
                         .get(0);
 
         System.out.println(
@@ -74,7 +74,6 @@ class PointServiceIntegrationTest {
     }
 
     @Test
-    @Transactional
     void 동시에_포인트를_충전해도_잔액이_정확하다() throws InterruptedException {
         int numberOfRequests = 10;
         long chargeAmount = 1_000L;

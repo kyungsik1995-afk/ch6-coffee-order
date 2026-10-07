@@ -1,27 +1,42 @@
 # K사 커피 주문 시스템
 
-K사 서버 개발 과제로 구현한 커피 주문 시스템입니다.
+K사 서버 개발 과제로 진행한 커피 주문 시스템입니다.
 
-## 프로젝트 목표
+Spring Boot와 JPA를 기반으로 커피 메뉴 조회와 포인트 충전 기능을 구현하고, **트랜잭션, 동시성 제어, 데이터 정합성**을 고려한 서버 구조를 설계하는 것을 목표로 했습니다.
 
-Spring Boot와 JPA를 활용하여 커피 메뉴 조회 및 포인트 충전 기능을 구현하고, 이후 주문/결제와 동시성 제어 등의 기능을 확장하는 것을 목표로 합니다.
+현재는 메뉴 조회와 포인트 충전 기능을 구현했으며, 이후 주문·결제, 중복 주문 방지, 외부 이벤트 처리 등의 기능으로 확장할 수 있도록 데이터베이스와 API를 설계했습니다.
 
-## 기술 스택
+## 개발 환경
 
-- Java 17
-- Spring Boot 4.0.8
-- Spring Data JPA
-- Spring Web MVC
-- MySQL
-- Gradle
-- JUnit 5
-- Mockito
+| 항목        | 내용                |
+| --------- | ----------------- |
+| Language  | Java 17           |
+| Framework | Spring Boot 4.0.8 |
+| ORM       | Spring Data JPA   |
+| Web       | Spring Web MVC    |
+| Database  | MySQL             |
+| Build     | Gradle            |
+| Test      | JUnit 5, Mockito  |
+
+## 구현 현황
+
+| 기능                   | 상태    |
+| -------------------- | ----- |
+| 커피 메뉴 조회             | ✅ 구현  |
+| 포인트 충전               | ✅ 구현  |
+| 포인트 충전 Validation    | ✅ 구현  |
+| 포인트 충전 트랜잭션 처리       | ✅ 구현  |
+| 포인트 충전 동시성 제어        | ✅ 구현  |
+| 주문 및 결제              | 🔄 예정 |
+| Idempotency Key      | 🔄 예정 |
+| Transactional Outbox | 🔄 예정 |
+| 인기 메뉴 조회             | 🔄 예정 |
 
 ## 주요 기능
 
 ### 1. 커피 메뉴 조회
 
-`GET /api/menus`
+**GET `/api/menus`**
 
 커피 메뉴의 ID, 이름, 가격을 조회합니다.
 
@@ -35,116 +50,249 @@ Spring Boot와 JPA를 활용하여 커피 메뉴 조회 및 포인트 충전 기
     "price": 3000
   }
 ]
+```
 
-Entity를 API 응답으로 직접 반환하지 않고 CoffeeMenuResponse DTO로 변환하여 반환하도록 구현했습니다.
+API 응답에는 Entity를 직접 노출하지 않고 `CoffeeMenuResponse` DTO를 사용했습니다.
 
-이를 통해 데이터베이스 Entity와 외부 API의 응답 구조를 분리했습니다.
+이를 통해 데이터베이스 모델과 외부 API 응답 모델을 분리했습니다.
 
-2. 포인트 충전
+### 2. 포인트 충전
 
-POST /api/points/charge
+**POST `/api/points/charge`**
 
 요청:
 
+```json
 {
   "userId": "user-1001",
   "amount": 5000
 }
+```
 
 응답:
 
+```json
 {
   "userId": "user-1001",
   "chargedAmount": 5000,
   "balance": 5000
 }
+```
 
-포인트 계정과 포인트 변경 이력을 분리하여 관리합니다.
+포인트 계정의 현재 잔액과 변경 이력을 분리하여 관리합니다.
 
-PointAccount: 현재 포인트 잔액 관리
-PointHistory: 포인트 충전 및 변경 이력 관리
+* `PointAccount`: 현재 포인트 잔액
+* `PointHistory`: 포인트 충전 이력
 
-userId에는 DB UNIQUE 제약조건을 적용하여 하나의 사용자에게 하나의 포인트 계정만 존재하도록 설계했습니다.
+`userId`에는 DB `UNIQUE` 제약조건을 적용하여 하나의 사용자에게 하나의 포인트 계정만 생성되도록 했습니다.
 
-3. 요청 데이터 검증
+### 3. 요청 데이터 검증
 
-Bean Validation을 사용하여 포인트 충전 요청을 검증합니다.
+Bean Validation을 적용하여 잘못된 포인트 충전 요청을 차단합니다.
 
-userId 필수
-amount 필수
-amount는 0보다 커야 함
+* `userId`는 필수
+* `amount`는 필수
+* `amount`는 0보다 커야 함
 
-잘못된 요청은 HTTP 400으로 처리합니다.
+잘못된 요청은 HTTP 400 응답으로 처리합니다.
 
-4. 예외 처리
+### 4. 공통 예외 처리
 
-@RestControllerAdvice를 이용하여 Validation 예외를 공통 응답 형식으로 처리했습니다.
+`@RestControllerAdvice`를 사용하여 Validation 예외를 공통 응답 형식으로 처리했습니다.
 
+```json
 {
   "code": "POINT_001",
   "message": "충전 요청이 올바르지 않습니다."
 }
-5. 트랜잭션
+```
 
-포인트 충전 시 계정 잔액 변경과 포인트 이력 저장을 하나의 트랜잭션으로 처리하도록 @Transactional을 적용했습니다.
+## 핵심 설계
 
-포인트 계정 조회/생성
+### 1. 트랜잭션을 통한 데이터 정합성 보장
+
+포인트 충전은 다음 작업을 하나의 트랜잭션으로 처리합니다.
+
+```text
+계정 생성 또는 조회
         ↓
 포인트 잔액 변경
         ↓
 포인트 이력 저장
         ↓
       COMMIT
-6. 동시성 제어 설계
+```
 
-포인트 잔액에 대한 동시 수정 문제를 고려하여 PESSIMISTIC_WRITE 락을 적용했습니다.
+`PointAccount`의 잔액 변경과 `PointHistory` 저장이 함께 성공하거나 함께 롤백되도록 `@Transactional`을 적용했습니다.
 
+이를 통해 잔액은 변경되었지만 이력이 저장되지 않는 등의 데이터 불일치 상황을 방지했습니다.
+
+### 2. 포인트 잔액 동시성 제어
+
+여러 요청이 동일한 사용자의 포인트를 동시에 충전할 경우, 각 요청이 같은 잔액을 읽고 수정하면 일부 변경이 유실될 수 있습니다.
+
+이를 방지하기 위해 계정 조회 시 `PESSIMISTIC_WRITE` 락을 적용했습니다.
+
+```java
 @Lock(LockModeType.PESSIMISTIC_WRITE)
-Optional<PointAccount> findByUserId(String userId);
+@Query("select p from PointAccount p where p.userId = :userId")
+Optional<PointAccount> findByUserIdForUpdate(String userId);
+```
 
-또한 userId에 DB UNIQUE 제약조건을 적용하여 계정 중복 생성을 방지하도록 설계했습니다.
+충전 과정은 다음 순서로 진행됩니다.
 
-테스트
+```text
+계정 존재 여부 확인 및 생성
+        ↓
+해당 계정 행에 비관적 쓰기 락 획득
+        ↓
+포인트 잔액 증가
+        ↓
+포인트 이력 저장
+        ↓
+      COMMIT
+```
 
-다음 테스트를 작성했습니다.
+동일한 계정에 대한 동시 수정 요청이 발생하더라도 한 번에 하나의 트랜잭션이 잔액을 수정하도록 하여 데이터 정합성을 유지합니다.
 
-메뉴 목록 조회 Controller 테스트
-포인트 충전 Controller 테스트
-포인트 입력값 Validation 테스트
-포인트 충전 Service 단위 테스트
-실제 MySQL을 사용하는 포인트 통합 테스트
-포인트 동시성 테스트 작성
+### 3. 최초 계정 생성 시 동시성 고려
 
-테스트 환경은 별도의 MySQL 데이터베이스를 사용하도록 구성했습니다.
+처음 충전하는 사용자는 포인트 계정이 존재하지 않을 수 있습니다.
 
+단순히
+
+```text
+조회 → 없으면 생성
+```
+
+방식으로 구현하면 동시에 여러 요청이 들어왔을 때 중복 생성 경쟁이 발생할 수 있습니다.
+
+이를 방지하기 위해 `userId`에 DB `UNIQUE` 제약조건을 적용하고, MySQL의
+
+```sql
+INSERT ... ON DUPLICATE KEY UPDATE
+```
+
+를 사용하는 `createIfNotExists()`를 구현했습니다.
+
+즉, 애플리케이션 로직뿐만 아니라 데이터베이스 제약조건과 원자적인 SQL 연산을 함께 사용하여 계정 중복 생성을 방지하도록 설계했습니다.
+
+> 현재 구현은 MySQL의 원자적 upsert 문법을 사용하므로 데이터베이스에 대한 의존성이 있습니다.
+> 대신 최초 계정 생성과 동시 요청 상황에서의 데이터 정합성을 명확하게 보장할 수 있도록 선택했습니다.
+
+### 4. 상태와 이력의 분리
+
+현재 포인트 잔액은 `PointAccount`에서 관리하고, 포인트 충전 내역은 `PointHistory`에 기록합니다.
+
+이를 통해 현재 상태와 변경 이력을 각각 독립적으로 관리할 수 있도록 설계했습니다.
+
+특히 `PointHistory`에 충전 금액과 충전 후 잔액인 `balanceAfter`를 함께 저장하여 이후 데이터 검증과 장애 분석에 활용할 수 있도록 했습니다.
+
+## 테스트
+
+기능별 테스트를 통해 API 동작뿐만 아니라 실제 데이터베이스 저장과 동시성 상황까지 검증했습니다.
+
+### Controller 테스트
+
+* 메뉴 목록 조회
+* 포인트 충전
+* 잘못된 포인트 충전 요청 Validation
+
+### Service 단위 테스트
+
+* 포인트 충전 로직
+* 포인트 이력 저장 여부
+
+### Integration 테스트
+
+실제 MySQL 테스트 데이터베이스를 사용하여 다음을 검증했습니다.
+
+* 포인트 계정 생성
+* 포인트 잔액 변경
+* 포인트 충전 이력 저장
+* 트랜잭션 기반 데이터 저장
+
+### 동시성 테스트
+
+동일 사용자의 포인트 충전 요청을 동시에 여러 번 실행하여 최종 잔액이 기대값과 일치하는지 검증했습니다.
+
+테스트 환경은 별도의 데이터베이스를 사용합니다.
+
+```text
 ch6_coffee_order_test
-데이터베이스 설계
+```
 
-현재 주요 테이블:
+전체 테스트는 다음 명령으로 실행할 수 있습니다.
 
-COFFEE_MENU
-POINT_ACCOUNT
-POINT_HISTORY
+```bash
+./gradlew test
+```
 
-향후 주문 및 외부 이벤트 처리를 위해 다음 테이블도 설계했습니다.
+## 데이터베이스 설계
 
-COFFEE_ORDER
-OUTBOX_EVENT
+현재 구현에 사용되는 주요 테이블은 다음과 같습니다.
 
-자세한 설계는 다음 문서를 참고합니다.
+* `COFFEE_MENU`
+* `POINT_ACCOUNT`
+* `POINT_HISTORY`
 
-docs/erd.md
-docs/api-spec.md
-향후 구현 계획
+향후 기능 확장을 고려하여 다음 테이블도 설계했습니다.
 
-제출 이후 다음 기능을 추가로 구현할 예정입니다.
+* `COFFEE_ORDER`
+* `OUTBOX_EVENT`
 
-커피 주문 및 포인트 결제
-주문 동시성 제어
-Idempotency Key를 이용한 중복 주문 방지
-Transactional Outbox를 이용한 외부 이벤트 처리
-최근 7일 인기 메뉴 TOP 3 조회
-다중 서버 환경에서의 동시성 및 데이터 정합성 검증
-프로젝트 진행 방식
+### 주요 설계 원칙
 
-설계 → Entity/Repository → Service → Controller/DTO → 테스트 순서로 기능을 구현하고 있습니다.
+* 포인트와 금액은 정수형으로 관리
+* `userId`에 `UNIQUE` 제약조건 적용
+* 포인트 변경 이력 별도 관리
+* 주문 시 메뉴명과 결제 금액을 Snapshot으로 저장
+* 외부 이벤트는 Transactional Outbox 구조로 확장 가능하도록 설계
+
+자세한 ERD는 [`docs/erd.md`](docs/erd.md)를 참고할 수 있습니다.
+
+API 명세는 [`docs/api-spec.md`](docs/api-spec.md)를 참고할 수 있습니다.
+
+## 향후 구현 계획
+
+### 1. 주문 및 결제
+
+포인트 잔액을 검증한 후 메뉴 금액을 차감하고 주문 및 결제 이력을 저장하도록 구현할 예정입니다.
+
+### 2. Idempotency Key
+
+동일한 주문 요청이 네트워크 재전송이나 클라이언트 재시도 등으로 여러 번 들어오는 상황을 고려하여 `Idempotency Key` 기반의 중복 주문 방지 기능을 구현할 예정입니다.
+
+### 3. Transactional Outbox
+
+주문과 포인트 차감은 DB 트랜잭션으로 처리하고, 외부 데이터 수집 플랫폼 전송 이벤트는 Outbox에 함께 저장한 뒤 별도의 작업으로 전송하도록 구현할 예정입니다.
+
+이를 통해 외부 API 장애가 발생하더라도 주문 및 결제 데이터와 이벤트 데이터를 안정적으로 관리할 수 있도록 할 예정입니다.
+
+### 4. 인기 메뉴 조회
+
+최근 7일 동안의 결제 완료 주문을 기준으로 메뉴별 주문 건수를 집계하고, 주문 수가 많은 상위 3개의 메뉴를 조회할 예정입니다.
+
+### 5. 다중 서버 환경 검증
+
+여러 서버 인스턴스가 동시에 요청을 처리하는 상황을 고려하여 동시성 제어와 데이터 정합성을 검증할 예정입니다.
+
+## 프로젝트 진행 방식
+
+다음 순서로 기능을 구현하고 있습니다.
+
+```text
+설계
+ ↓
+Entity / Repository
+ ↓
+Service
+ ↓
+Controller / DTO
+ ↓
+테스트
+ ↓
+문서화 및 개선
+```
+
+단순히 기능을 구현하는 것에서 끝나지 않고, **데이터 정합성, 동시성, 확장 가능성, 테스트 가능성**을 함께 고려하는 것을 목표로 합니다.
